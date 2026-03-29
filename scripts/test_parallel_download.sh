@@ -54,14 +54,49 @@ ensure_pid_dir() {
 
 wait_http_ok() {
   local url="$1"
-  local max_attempts=20
+  local max_attempts="${2:-20}"
+  local sleep_seconds="${3:-0.25}"
   local attempt=1
   until curl -s "$url" >/dev/null 2>&1; do
     if [[ "$attempt" -ge "$max_attempts" ]]; then
       echo "Timed out waiting for $url" >&2
       return 1
     fi
-    sleep 0.25
+    sleep "$sleep_seconds"
+    attempt=$((attempt + 1))
+  done
+}
+
+wait_dht_ready() {
+  local url="http://127.0.0.1:8080/get/$TEST_HASH"
+  local max_attempts=120
+  local attempt=1
+  local dht_pid=""
+
+  if [[ -f "$DHT_PID_FILE" ]]; then
+    dht_pid="$(cat "$DHT_PID_FILE")"
+  fi
+
+  until curl -s "$url" >/dev/null 2>&1; do
+    if [[ -n "$dht_pid" ]] && ! kill -0 "$dht_pid" >/dev/null 2>&1; then
+      echo "DHT process exited before becoming ready." >&2
+      [[ -f "$DHT_LOG" ]] && tail -n 30 "$DHT_LOG" >&2
+      return 1
+    fi
+
+    if [[ -f "$DHT_LOG" ]] && grep -q "Address already in use" "$DHT_LOG"; then
+      echo "DHT failed to bind to port 8080 (address already in use)." >&2
+      tail -n 30 "$DHT_LOG" >&2
+      return 1
+    fi
+
+    if [[ "$attempt" -ge "$max_attempts" ]]; then
+      echo "Timed out waiting for $url" >&2
+      [[ -f "$DHT_LOG" ]] && tail -n 30 "$DHT_LOG" >&2
+      return 1
+    fi
+
+    sleep 0.5
     attempt=$((attempt + 1))
   done
 }
@@ -124,9 +159,9 @@ start_services() {
     echo $! > "$PEER_B_PID_FILE"
   )
 
-  wait_http_ok "http://127.0.0.1:8080/get/$TEST_HASH" || true
-  wait_http_ok "http://127.0.0.1:9001/$TEST_HASH"
-  wait_http_ok "http://127.0.0.1:9002/$TEST_HASH"
+  wait_dht_ready
+  wait_http_ok "http://127.0.0.1:9001/$TEST_HASH" 60 0.25
+  wait_http_ok "http://127.0.0.1:9002/$TEST_HASH" 60 0.25
 }
 
 register_peers() {
