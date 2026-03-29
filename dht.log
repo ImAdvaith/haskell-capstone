@@ -1,0 +1,3 @@
+DHT Node started on port 8080...
+Setting phasers to stun... (port 8080) (ctrl-c to quit)
+DHTServer.hs: Network.Socket.bind: resource busy (Address already in use)
